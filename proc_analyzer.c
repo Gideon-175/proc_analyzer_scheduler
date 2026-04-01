@@ -10,12 +10,14 @@
 #include <linux/slab.h>
 #include <linux/jiffies.h>
 
+#define WAIT_THRESHOLD_MS 1000
+#define CPU_THRESHOLD_MS  100
 
 #define PROC_NAME "proc_analyzer"
 
 /* new */
 struct proc_stat {
-    pid_t pid;
+    pid_t pid;T
     u64 last_cpu_time;
     u64 switch_count;
     u64 last_seen_jiffies;
@@ -61,45 +63,51 @@ static int proc_analyzer_show(struct seq_file *m, void *v)
     struct task_struct *task;
     struct proc_stat *ps;
     u64 curr_cpu_time;
-    u64 now;
 
     seq_printf(m,
-        "PID\tCPU(ms)\tSWITCHES\tMAX_WAIT(ms)\tCOMM\n");
+        "PID\tCPU(ms)\tSWITCHES\tMAX_WAIT(ms)\tSTATUS\t\tCOMM\n");
 
     spin_lock(&stat_lock);
 
     for_each_process(task) {
         curr_cpu_time = (task->utime + task->stime) / 1000000;
+
         ps = get_proc_stat(task->pid);
         if (!ps)
             continue;
 
-        now = jiffies;
-
+        /* Update switch count and wait time */
         if (curr_cpu_time > ps->last_cpu_time) {
-            u64 wait = now - ps->last_seen_jiffies;
+            u64 wait = jiffies - ps->last_seen_jiffies;
 
             if (wait > ps->max_wait_jiffies)
                 ps->max_wait_jiffies = wait;
 
             ps->switch_count++;
-            ps->last_seen_jiffies = now;
+            ps->last_seen_jiffies = jiffies;
         }
 
         ps->last_cpu_time = curr_cpu_time;
 
-        seq_printf(m, "%d\t%llu\t%llu\t\t%llu\t\t%s\n",
+        /* Starvation heuristic */
+        const char *status = "OK";
+        if (jiffies_to_msecs(ps->max_wait_jiffies) > WAIT_THRESHOLD_MS &&
+            curr_cpu_time < CPU_THRESHOLD_MS) {
+            status = "STARVING";
+        }
+
+        seq_printf(m, "%d\t%llu\t%llu\t\t%llu\t\t%s\t\t%s\n",
                    task->pid,
                    curr_cpu_time,
                    ps->switch_count,
                    (u64)jiffies_to_msecs(ps->max_wait_jiffies),
+                   status,
                    task->comm);
     }
 
     spin_unlock(&stat_lock);
     return 0;
 }
-
 
 
 static int proc_analyzer_open(struct inode *inode, struct file *file)
@@ -120,12 +128,6 @@ static int __init proc_analyzer_init(void)
     printk(KERN_INFO "proc_analyzer: process list observer loaded\n");
     return 0;
 }
-
-// static void __exit proc_analyzer_exit(void)
-// {
-//     remove_proc_entry(PROC_NAME, NULL);
-//     printk(KERN_INFO "proc_analyzer: process list observer unloaded\n");
-// }
 
 static void __exit proc_analyzer_exit(void)
 {
