@@ -8,8 +8,7 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
-
-
+#include <linux/jiffies.h>
 
 
 #define PROC_NAME "proc_analyzer"
@@ -19,6 +18,8 @@ struct proc_stat {
     pid_t pid;
     u64 last_cpu_time;
     u64 switch_count;
+    u64 last_seen_jiffies;
+    u64 max_wait_jiffies;
     struct list_head list;
 };
 
@@ -55,62 +56,50 @@ static struct proc_stat *get_proc_stat(pid_t pid)
  */
 
 
-
-
-
-// static int proc_analyzer_show(struct seq_file *m, void *v)
-// {
-//     struct task_struct *task;
-//     u64 total_time_ms;
-
-//     seq_printf(m, "PID\tTGID\tCPU(ms)\tCOMM\n");
-
-//     for_each_process(task) {
-//         total_time_ms = (task->utime + task->stime) / 1000000;
-
-//         seq_printf(m, "%d\t%d\t%llu\t%s\n",
-//                    task->pid,
-//                    task->tgid,
-//                    total_time_ms,
-//                    task->comm);
-//     }
-
-//     return 0;
-// }
-
 static int proc_analyzer_show(struct seq_file *m, void *v)
 {
     struct task_struct *task;
     struct proc_stat *ps;
     u64 curr_cpu_time;
+    u64 now;
 
-    seq_printf(m, "PID\tCPU(ms)\tSWITCHES\tCOMM\n");
+    seq_printf(m,
+        "PID\tCPU(ms)\tSWITCHES\tMAX_WAIT(ms)\tCOMM\n");
 
     spin_lock(&stat_lock);
 
     for_each_process(task) {
         curr_cpu_time = (task->utime + task->stime) / 1000000;
-
         ps = get_proc_stat(task->pid);
         if (!ps)
             continue;
 
-        if (curr_cpu_time > ps->last_cpu_time)
+        now = jiffies;
+
+        if (curr_cpu_time > ps->last_cpu_time) {
+            u64 wait = now - ps->last_seen_jiffies;
+
+            if (wait > ps->max_wait_jiffies)
+                ps->max_wait_jiffies = wait;
+
             ps->switch_count++;
+            ps->last_seen_jiffies = now;
+        }
 
         ps->last_cpu_time = curr_cpu_time;
 
-        seq_printf(m, "%d\t%llu\t%llu\t\t%s\n",
+        seq_printf(m, "%d\t%llu\t%llu\t\t%llu\t\t%s\n",
                    task->pid,
                    curr_cpu_time,
                    ps->switch_count,
+                   (u64)jiffies_to_msecs(ps->max_wait_jiffies),
                    task->comm);
     }
 
     spin_unlock(&stat_lock);
-
     return 0;
 }
+
 
 
 static int proc_analyzer_open(struct inode *inode, struct file *file)
