@@ -3,13 +3,37 @@
 #include <linux/init.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/sched/signal.h>
+#include <linux/sched/signal.h>
+
 
 #define PROC_NAME "proc_analyzer"
 
+/*
+ * /proc show function
+ * Iterates over all processes in the system
+ */
 static int proc_analyzer_show(struct seq_file *m, void *v)
 {
-    seq_printf(m, "proc_analyzer loaded successfully\n");
-    seq_printf(m, "This is STEP 3: /proc interface test\n");
+    struct task_struct *task;
+
+    seq_printf(m, "PID\tTGID\tSTATE\tCOMM\n");
+
+    for_each_process(task) {
+        // seq_printf(m, "%d\t%d\t%ld\t%s\n",
+        //            task->pid,
+        //            task->tgid,
+        //            task->state,
+        //            task->comm);
+
+        seq_printf(m, "%d\t%d\t%d\t%s\n",
+           task->pid,
+           task->tgid,
+           task_state_index(task),
+           task->comm);
+
+    }
+
     return 0;
 }
 
@@ -28,14 +52,14 @@ static const struct proc_ops proc_analyzer_ops = {
 static int __init proc_analyzer_init(void)
 {
     proc_create(PROC_NAME, 0, NULL, &proc_analyzer_ops);
-    printk(KERN_INFO "proc_analyzer: /proc entry created\n");
+    printk(KERN_INFO "proc_analyzer: process list observer loaded\n");
     return 0;
 }
 
 static void __exit proc_analyzer_exit(void)
 {
     remove_proc_entry(PROC_NAME, NULL);
-    printk(KERN_INFO "proc_analyzer: /proc entry removed\n");
+    printk(KERN_INFO "proc_analyzer: process list observer unloaded\n");
 }
 
 module_init(proc_analyzer_init);
@@ -44,4 +68,4 @@ module_exit(proc_analyzer_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Proc Analyzer Team");
 MODULE_DESCRIPTION("Kernel-Level Process Behavior Analyzer");
-MODULE_VERSION("0.2");
+MODULE_VERSION("0.4");
