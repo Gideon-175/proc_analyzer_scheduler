@@ -5,6 +5,8 @@
 #include <linux/seq_file.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/signal.h>
+// #include <linux/sched/cputime.h>
+
 
 
 #define PROC_NAME "proc_analyzer"
@@ -13,6 +15,10 @@
  * /proc show function
  * Iterates over all processes in the system
  */
+
+/* 
+function change
+
 static int proc_analyzer_show(struct seq_file *m, void *v)
 {
     struct task_struct *task;
@@ -36,6 +42,30 @@ static int proc_analyzer_show(struct seq_file *m, void *v)
 
     return 0;
 }
+
+*/
+
+static int proc_analyzer_show(struct seq_file *m, void *v)
+{
+    struct task_struct *task;
+    u64 total_time_ms;
+
+    seq_printf(m, "PID\tTGID\tCPU(ms)\tCOMM\n");
+
+    for_each_process(task) {
+        total_time_ms = (task->utime + task->stime) / 1000000;
+
+        seq_printf(m, "%d\t%d\t%llu\t%s\n",
+                   task->pid,
+                   task->tgid,
+                   total_time_ms,
+                   task->comm);
+    }
+
+    return 0;
+}
+
+
 
 static int proc_analyzer_open(struct inode *inode, struct file *file)
 {
